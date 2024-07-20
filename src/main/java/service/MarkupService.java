@@ -14,12 +14,12 @@ public class MarkupService {
         ReplyKeyboardMarkup board = new ReplyKeyboardMarkup();
         board.setResizeKeyboard(true);
         board.setSelective(true);
-        board.setOneTimeKeyboard(true);
-        for (String[] knopka : buttons) {
+        board.setOneTimeKeyboard(false);
+        for (String[] button : buttons) {
             KeyboardRow row = new KeyboardRow();
-            for (String s : knopka) {
-                KeyboardButton button = new KeyboardButton(s);
-                row.add(button);
+            for (String s : button) {
+                KeyboardButton keyboardButton = new KeyboardButton(s);
+                row.add(keyboardButton);
             }
             rows.add(row);
         }

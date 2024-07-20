@@ -34,24 +34,27 @@ public class CardService {
         }
     }
 
-    public List<Card> getCardsByUserId(Long userId) {
+    public List<Card> getCardsByUserId(long userId) {
         List<Card> cards = new ArrayList<>();
-        String sql = "SELECT * FROM card WHERE user_id = ?";
+        String sql = "SELECT * FROM card WHERE user_id = ? ORDER BY id";
         try (Connection conn = TestConnection.getInstance().getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setLong(1, userId);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
-                long id = rs.getLong("id");
-                String cardNumber = rs.getString("card_number");
-                double balance = rs.getDouble("balance");
-                cards.add(new Card(id, cardNumber, userId, balance));
+                cards.add(new Card(
+                        rs.getLong("id"),
+                        rs.getString("card_number"),
+                        rs.getLong("user_id"),
+                        rs.getDouble("balance")
+                ));
             }
         } catch (SQLException e) {
             e.printStackTrace();
         }
         return cards;
     }
+
 
     public void transfer(int fromCardId, int toCardId, double amount) {
         String sqlCheckBalance = "SELECT balance FROM card WHERE id = ?";
@@ -96,7 +99,6 @@ public class CardService {
                 pstmtUpdateToCard.executeUpdate();
 
                 conn.commit();
-                System.out.println("Transfer completed successfully.");
             } catch (SQLException e) {
                 conn.rollback();
                 throw e;
@@ -115,25 +117,22 @@ public class CardService {
             pstmt.setDouble(1, amount);
             pstmt.setInt(2, cardId);
             pstmt.executeUpdate();
-            System.out.println("Deposit completed successfully.");
         } catch (SQLException e) {
             e.printStackTrace();
         }
     }
 
-    public List<String> getHistory(int cardId) {
+    public List<String> getHistory(long cardId) {
         List<String> history = new ArrayList<>();
-        String sql = "SELECT * FROM transfer WHERE from_card = ? OR to_card = ?";
+        String sql = "SELECT * FROM transfer WHERE from_card = ?";
         try (Connection conn = TestConnection.getInstance().getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, cardId);
-            pstmt.setInt(2, cardId);
+            pstmt.setLong(1, cardId);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
-                int id = rs.getInt("id");
-                int fromCard = rs.getInt("from_card");
-                int toCard = rs.getInt("to_card");
-                history.add("Transfer ID: " + id + ", From Card: " + fromCard + ", To Card: " + toCard);
+                history.add("Transfer ID: " + rs.getLong("id") +
+                        ", From Card: " + rs.getLong("from_card") +
+                        ", To Card: " + rs.getLong("to_card"));
             }
         } catch (SQLException e) {
             e.printStackTrace();

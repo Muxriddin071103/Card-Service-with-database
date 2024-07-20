@@ -22,6 +22,8 @@ public class BotService {
     private final CardService cardService = CardService.getInstance();
 
     private final Map<Long, String> userStates = new HashMap<>();
+    private final Map<Long, String[]> transferDetails = new HashMap<>();
+    private final Map<Long, String[]> depositDetails = new HashMap<>();
 
     public void messageHandler(Update update) {
         chatId = update.getMessage().getChatId();
@@ -38,43 +40,53 @@ public class BotService {
                         addUser(chatId);
                     }
                     message.setText("Welcome to the bot!");
-                    message.setReplyMarkup(markupService.getMarkup(new String[][]{{"my cards", "add card"}, {"transfer", "deposit"}, {"history"}}));
+                    message.setReplyMarkup(markupService.getMarkup(new String[][]{
+                            {"My Cards", "Add Card"},
+                            {"Transfer", "Deposit"},
+                            {"History"}
+                    }));
                     break;
-                case "my cards":
+                case "My Cards":
                     User user = getUserByChatId(chatId);
                     if (user != null) {
-                        StringBuilder cardsInfo = new StringBuilder("Your cards:\n");
                         List<Card> cards = cardService.getCardsByUserId(user.getId());
+                        StringBuilder cardsInfo = new StringBuilder("Your cards:\n");
                         for (Card card : cards) {
-                            cardsInfo.append("Card ID: ").append(card.getId()).append(") Card Number: ").append(card.getCardNumber()).append(",  Card Balance: ").append(card.getBalance()).append("\n");
+                            cardsInfo.append("Card ID: ").append(card.getId())
+                                    .append(") Card Number: ").append(card.getCardNumber())
+                                    .append(", Card Balance: $").append(card.getBalance())
+                                    .append("\n");
                         }
                         message.setText(cardsInfo.toString());
                     } else {
                         message.setText("User not found.");
                     }
                     break;
-                case "add card":
+                case "Add Card":
                     message.setText("Please enter the card number.");
                     userStates.put(chatId, "waiting_for_card_number");
                     break;
-                case "transfer":
-                    message.setText("Please enter the card number to transfer from, card number to transfer to, and amount in the format: fromCardNumber toCardNumber amount");
-                    userStates.put(chatId, "waiting_for_transfer_details");
+                case "Transfer":
+                    message.setText("Please select the card number to transfer from.");
+                    userStates.put(chatId, "waiting_for_from_card");
+                    showCardSelection(message, chatId, "transfer");
                     break;
-                case "history":
-                    message.setText("Please enter the card number to view history:");
+                case "History":
+                    message.setText("Please select the card number to view history:");
                     userStates.put(chatId, "waiting_for_history_card_number");
+                    showCardSelection(message, chatId, "history");
                     break;
-                case "deposit":
-                    message.setText("Please enter the card number to deposit into and amount in the format: cardNumber amount");
-                    userStates.put(chatId, "waiting_for_deposit_details");
+                case "Deposit":
+                    message.setText("Please select the card number to deposit into.");
+                    userStates.put(chatId, "waiting_for_deposit_card_number");
+                    showCardSelection(message, chatId, "deposit");
                     break;
                 default:
                     message.setText("Unknown command!");
             }
-        }
 
-        myBot.smsSender(message);
+            myBot.smsSender(message);
+        }
     }
 
     private void handleUserInput(Update update, SendMessage message) {
@@ -99,35 +111,49 @@ public class BotService {
                         message.setText("User not found.");
                     }
                     userStates.remove(chatId);
+                    sendMainMenu(message);
                 } else {
                     message.setText("Invalid card number. Please enter a valid 16-digit card number.");
                 }
                 break;
 
-            case "waiting_for_transfer_details":
-                String[] transferDetails = messageText.split(" ");
-                if (transferDetails.length == 3) {
-                    try {
-                        String fromCardNumber = transferDetails[0];
-                        String toCardNumber = transferDetails[1];
-                        double amount = Double.parseDouble(transferDetails[2]);
-
-                        long fromCardId = getCardIdByNumber(fromCardNumber);
-                        long toCardId = getCardIdByNumber(toCardNumber);
-
-                        if (fromCardId != -1 && toCardId != -1) {
-                            cardService.transfer((int) fromCardId, (int) toCardId, amount);
-                            message.setText("Transfer completed successfully.");
-                        } else {
-                            message.setText("Invalid card numbers. Please check and try again.");
-                        }
-                    } catch (NumberFormatException e) {
-                        message.setText("Invalid input format. Please provide valid card numbers and amount.");
-                    }
+            case "waiting_for_from_card":
+                if (messageText.matches("\\d{16}")) {
+                    transferDetails.put(chatId, new String[]{messageText, null, null});
+                    message.setText("Please enter the card number to transfer to.");
+                    userStates.put(chatId, "waiting_for_to_card");
                 } else {
-                    message.setText("Invalid format. Please provide details in the format: fromCardNumber toCardNumber amount");
+                    message.setText("Invalid card number. Please enter a valid 16-digit card number.");
                 }
-                userStates.remove(chatId);
+                break;
+
+            case "waiting_for_to_card":
+                if (messageText.matches("\\d{16}")) {
+                    String[] details = transferDetails.get(chatId);
+                    details[1] = messageText;
+                    message.setText("Please enter the amount to transfer.");
+                    userStates.put(chatId, "waiting_for_amount");
+                } else {
+                    message.setText("Invalid card number. Please enter a valid 16-digit card number.");
+                }
+                break;
+
+            case "waiting_for_amount":
+                try {
+                    double amount = Double.parseDouble(messageText);
+                    String[] details = transferDetails.get(chatId);
+                    cardService.transfer(
+                            (int) getCardIdByNumber(details[0]),
+                            (int) getCardIdByNumber(details[1]),
+                            amount
+                    );
+                    message.setText("Transfer completed successfully.");
+                    userStates.remove(chatId);
+                    transferDetails.remove(chatId);
+                    sendMainMenu(message);
+                } catch (NumberFormatException e) {
+                    message.setText("Invalid amount. Please enter a numeric value.");
+                }
                 break;
 
             case "waiting_for_history_card_number":
@@ -147,34 +173,67 @@ public class BotService {
                     } catch (NumberFormatException e) {
                         message.setText("Invalid card number. Please enter a valid 16-digit card number.");
                     }
+                    userStates.remove(chatId);
+                    sendMainMenu(message);
                 } else {
                     message.setText("Invalid card number. Please enter a valid 16-digit card number.");
                 }
-                userStates.remove(chatId);
                 break;
 
-            case "waiting_for_deposit_details":
-                String[] depositDetails = messageText.split(" ");
-                if (depositDetails.length == 2) {
-                    try {
-                        String cardNumber = depositDetails[0];
-                        double amount = Double.parseDouble(depositDetails[1]);
-                        long cardId = getCardIdByNumber(cardNumber);
-                        if (cardId != -1) {
-                            cardService.deposite((int) cardId, amount);
-                            message.setText("Deposit completed successfully.");
-                        } else {
-                            message.setText("Invalid card number. Please enter a valid 16-digit card number.");
-                        }
-                    } catch (NumberFormatException e) {
-                        message.setText("Invalid input format. Please provide a valid card number and amount.");
-                    }
+            case "waiting_for_deposit_card_number":
+                if (messageText.matches("\\d{16}")) {
+                    depositDetails.put(chatId, new String[]{messageText, null});
+                    message.setText("Please enter the amount to deposit.");
+                    userStates.put(chatId, "waiting_for_deposit_amount");
                 } else {
-                    message.setText("Invalid format. Please provide details in the format: cardNumber amount");
+                    message.setText("Invalid card number. Please enter a valid 16-digit card number.");
                 }
-                userStates.remove(chatId);
                 break;
+
+            case "waiting_for_deposit_amount":
+                try {
+                    double amount = Double.parseDouble(messageText);
+                    String[] details = depositDetails.get(chatId);
+                    cardService.deposite(
+                            (int) getCardIdByNumber(details[0]),
+                            amount
+                    );
+                    message.setText("Deposit completed successfully.");
+                    userStates.remove(chatId);
+                    depositDetails.remove(chatId);
+                    sendMainMenu(message);
+                } catch (NumberFormatException e) {
+                    message.setText("Invalid amount. Please enter a numeric value.");
+                }
+                break;
+
+            default:
+                message.setText("Unknown state. Please try again.");
         }
+
+        myBot.smsSender(message);
+    }
+
+    private void showCardSelection(SendMessage message, Long chatId, String operation) {
+        User user = getUserByChatId(chatId);
+        if (user != null) {
+            List<Card> cards = cardService.getCardsByUserId(user.getId());
+            String[][] buttons = new String[cards.size()][1];
+            for (int i = 0; i < cards.size(); i++) {
+                buttons[i][0] = cards.get(i).getCardNumber();
+            }
+            message.setReplyMarkup(markupService.getMarkup(buttons));
+        } else {
+            message.setText("User not found.");
+        }
+    }
+
+    private void sendMainMenu(SendMessage message) {
+        message.setReplyMarkup(markupService.getMarkup(new String[][]{
+                {"My Cards", "Add Card"},
+                {"Transfer", "Deposit"},
+                {"History"}
+        }));
     }
 
     public void callbackHandler(Update update) {
@@ -188,48 +247,33 @@ public class BotService {
             case "show_cards":
                 User user = getUserByChatId(callbackChatId);
                 if (user != null) {
-                    StringBuilder cardsInfo = new StringBuilder("Your cards:\n");
                     List<Card> cards = cardService.getCardsByUserId(user.getId());
+                    StringBuilder cardsInfo = new StringBuilder("Your cards:\n");
                     for (Card card : cards) {
-                        cardsInfo.append("Card Number: ").append(card.getCardNumber()).append("\n");
+                        cardsInfo.append("Card Number: ").append(card.getCardNumber())
+                                .append(", Balance: $").append(card.getBalance())
+                                .append("\n");
                     }
                     message.setText(cardsInfo.toString());
                 } else {
                     message.setText("User not found.");
                 }
                 break;
-            case "add_new_card":
-                message.setText("Please enter the card number.");
-                userStates.put(callbackChatId, "waiting_for_card_number");
-                break;
-            case "transfer":
-                message.setText("Please enter the card number to transfer from, card number to transfer to, and amount in the format: fromCardNumber toCardNumber amount");
-                userStates.put(callbackChatId, "waiting_for_transfer_details");
-                break;
-            case "history":
-                message.setText("Please enter the card number to view history:");
-                userStates.put(callbackChatId, "waiting_for_history_card_number");
-                break;
-            case "deposite":
-                message.setText("Please enter the card number to deposit into and amount in the format: cardNumber amount");
-                userStates.put(callbackChatId, "waiting_for_deposit_details");
-                break;
+
             default:
-                message.setText("Unknown callback!");
+                message.setText("Unknown callback data!");
         }
 
         myBot.smsSender(message);
     }
 
     private boolean userExists(Long chatId) {
-        String sql = "SELECT COUNT(*) FROM users WHERE id = ?";
+        String sql = "SELECT 1 FROM users WHERE id = ?";
         try (Connection conn = TestConnection.getInstance().getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setLong(1, chatId);
             ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                return rs.getInt(1) > 0;
-            }
+            return rs.next();
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -241,7 +285,7 @@ public class BotService {
         try (Connection conn = TestConnection.getInstance().getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setLong(1, chatId);
-            pstmt.setString(2, "User " + chatId); // Placeholder name
+            pstmt.setString(2, "User" + chatId);
             pstmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -278,7 +322,7 @@ public class BotService {
         return -1;
     }
 
-    static BotService botService;
+    private static BotService botService;
 
     public static BotService getBotService() {
         if (botService == null) botService = new BotService();

@@ -1,0 +1,17 @@
+CREATE TABLE users (
+                       id NUMERIC PRIMARY KEY,
+                       name VARCHAR
+);
+
+CREATE TABLE card (
+                      id SERIAL PRIMARY KEY,
+                      card_number VARCHAR NOT NULL,
+                      user_id NUMERIC REFERENCES users(id),
+                      balance DOUBLE PRECISION DEFAULT 0
+);
+
+CREATE TABLE transfer (
+                          id SERIAL PRIMARY KEY,
+                          from_card NUMERIC,
+                          to_card NUMERIC
+);
